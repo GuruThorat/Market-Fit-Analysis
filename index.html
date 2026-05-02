@@ -1095,13 +1095,13 @@ Be specific and evidence-based. Reference actual details from the research data.
   }
 
   async function callGemini(apiKey, prompt) {
-    const url = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=' + encodeURIComponent(apiKey);
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey);
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.5, responseMimeType: 'application/json', maxOutputTokens: 2500 }
+        generationConfig: { temperature: 0.5, maxOutputTokens: 2500 }
       })
     });
     if (!resp.ok) {
