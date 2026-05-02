@@ -1104,7 +1104,12 @@ Be specific and evidence-based. Reference details from the research, but PARAPHR
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.5, maxOutputTokens: 2500, response_mime_type: 'application/json' }
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: 8000,
+          response_mime_type: 'application/json',
+          thinkingConfig: { thinkingBudget: 0 }
+        }
       })
     });
     if (!resp.ok) {
@@ -1116,12 +1121,20 @@ Be specific and evidence-based. Reference details from the research, but PARAPHR
     }
     const data = await resp.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!text) throw new Error('Empty response from Gemini. Try again.');
+    const finishReason = data?.candidates?.[0]?.finishReason || '';
+    if (!text) {
+      console.error('Empty Gemini response. Full data:', data);
+      throw new Error('Empty response (finishReason: ' + finishReason + '). Open the browser console for full details.');
+    }
+    console.log('Gemini raw response:', text);
     // Strip markdown fences and surrounding whitespace
     let cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/,'').trim();
     // Extract first {...} block in case of extra surrounding text
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response. Try again.');
+    if (!match) {
+      console.error('No JSON in response. Raw text:', text);
+      throw new Error('No JSON object found. Raw response: ' + text.slice(0, 200));
+    }
     let jsonStr = match[0];
     // Try parsing as-is first
     try { return JSON.parse(jsonStr); } catch (e1) {
