@@ -1033,7 +1033,14 @@ Quotes:
   }
 
   function buildPrompt(product, audience, userData, pricing, industry) {
-    return `You are an expert product strategist analyzing market-fit signals from user research data. Respond ONLY with a valid JSON object — no markdown, no code fences, no extra text.
+    return `You are an expert product strategist. Respond with ONLY a valid JSON object — no markdown, no code fences, no extra text before or after.
+
+CRITICAL JSON RULES (follow strictly to avoid parse errors):
+- Use ONLY straight double quotes for JSON strings, never curly/smart quotes
+- Inside string values, NEVER use double quotes — use single quotes or paraphrase instead
+- No trailing commas before } or ]
+- No line breaks inside string values — use a single line per value
+- All string values must be on one line
 
 ## INPUTS
 Product: ${product}
@@ -1046,19 +1053,15 @@ User research data:
 ${userData}
 """
 
-## YOUR TASK
-Analyze how well the user research signals support the product hypothesis. Look for:
-- Pain points the product addresses
-- Budget signals (past purchases, willingness to spend, urgency)
-- Behavioral indicators (active in relevant communities, prior tool usage)
-- Language match between user's stated needs and the product solution
+## TASK
+Analyze how well the user research signals support the product hypothesis. Look for pain points, budget signals, behavioral indicators, and language match.
 
-## OUTPUT JSON SHAPE (return exactly this shape)
+## OUTPUT JSON SHAPE (return exactly this shape, no extra fields)
 {
   "fit_score": <integer 0-100>,
-  "willingness_to_pay": <integer 0-100, percentage of users likely to pay>,
-  "conversion_likelihood": <integer 0-100, percent likely to convert from trial to paid>,
-  "completion_potential": <integer 0-100, percent likely to complete onboarding>,
+  "willingness_to_pay": <integer 0-100>,
+  "conversion_likelihood": <integer 0-100>,
+  "completion_potential": <integer 0-100>,
   "fit_dimensions": {
     "problem_match": <integer 0-100>,
     "budget_match": <integer 0-100>,
@@ -1066,32 +1069,32 @@ Analyze how well the user research signals support the product hypothesis. Look 
     "channel_fit": <integer 0-100>,
     "tech_readiness": <integer 0-100>
   },
-  "user_profile_summary": "<2-3 sentence rich summary of the user>",
+  "user_profile_summary": "<2-3 sentences, no internal double quotes>",
   "user_segments": ["<short tag>", "<short tag>", "<short tag>"],
   "fit_signals": [
-    {"signal": "<specific finding>", "evidence": "<quote or detail from research>"},
-    {"signal": "<specific finding>", "evidence": "<quote or detail from research>"},
-    {"signal": "<specific finding>", "evidence": "<quote or detail from research>"}
+    {"signal": "<finding, no inner double quotes>", "evidence": "<paraphrase the user data, no inner double quotes>"},
+    {"signal": "<finding>", "evidence": "<paraphrased detail>"},
+    {"signal": "<finding>", "evidence": "<paraphrased detail>"}
   ],
   "risk_signals": [
-    {"risk": "<specific risk>", "mitigation": "<how to address>"},
-    {"risk": "<specific risk>", "mitigation": "<how to address>"},
-    {"risk": "<specific risk>", "mitigation": "<how to address>"}
+    {"risk": "<risk, no inner double quotes>", "mitigation": "<how to address>"},
+    {"risk": "<risk>", "mitigation": "<how to address>"},
+    {"risk": "<risk>", "mitigation": "<how to address>"}
   ],
   "recommended_next_steps": [
-    "<concrete actionable step>",
-    "<concrete actionable step>",
-    "<concrete actionable step>",
-    "<concrete actionable step>"
+    "<actionable step>",
+    "<actionable step>",
+    "<actionable step>",
+    "<actionable step>"
   ],
   "hypothesis_experiments": [
-    {"name": "<experiment name>", "hypothesis": "<what you're testing>", "method": "<how to run it in 1-2 days>"},
-    {"name": "<experiment name>", "hypothesis": "<what you're testing>", "method": "<how to run it in 1-2 days>"}
+    {"name": "<name>", "hypothesis": "<what to test>", "method": "<1-2 day method>"},
+    {"name": "<name>", "hypothesis": "<what to test>", "method": "<1-2 day method>"}
   ],
-  "verdict": "<1-sentence go/no-go recommendation with reasoning>"
+  "verdict": "<1-sentence go/no-go recommendation>"
 }
 
-Be specific and evidence-based. Reference actual details from the research data. Use direct quotes for evidence where possible.`;
+Be specific and evidence-based. Reference details from the research, but PARAPHRASE — never copy quotes verbatim into JSON values.`;
   }
 
   async function callGemini(apiKey, prompt) {
@@ -1114,12 +1117,32 @@ Be specific and evidence-based. Reference actual details from the research data.
     const data = await resp.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!text) throw new Error('Empty response from Gemini. Try again.');
-    // Strip markdown fences if present
+    // Strip markdown fences and surrounding whitespace
     let cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/,'').trim();
     // Extract first {...} block in case of extra surrounding text
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON found in response. Try again.');
-    return JSON.parse(match[0]);
+    if (!match) throw new Error('No JSON object found in response. Try again.');
+    let jsonStr = match[0];
+    // Try parsing as-is first
+    try { return JSON.parse(jsonStr); } catch (e1) {
+      // Repair attempt: remove trailing commas, fix common issues
+      let repaired = jsonStr
+        .replace(/,(\s*[}\]])/g, '$1')                      // remove trailing commas
+        .replace(/[\u201C\u201D]/g, '"')                    // smart double quotes -> straight
+        .replace(/[\u2018\u2019]/g, "'")                    // smart single quotes -> straight
+        .replace(/[\r\n]+/g, ' ');                          // newlines inside strings -> spaces
+      try { return JSON.parse(repaired); } catch (e2) {
+        // Last resort: try to fix unescaped quotes inside string values
+        // Find "key": "value with "nested" quotes" and escape inner quotes
+        let aggressive = repaired.replace(/:\s*"((?:[^"\\]|\\.)*)"/g, function(m, val) {
+          // val is the captured string content; escape any stray double quotes
+          return ': "' + val.replace(/(?<!\\)"/g, '\\"') + '"';
+        });
+        try { return JSON.parse(aggressive); } catch (e3) {
+          throw new Error('Could not parse Gemini response. Try clicking Generate again — the model sometimes returns better JSON on retry.');
+        }
+      }
+    }
   }
 
   function renderReport(r) {
