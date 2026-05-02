@@ -1101,7 +1101,7 @@ Be specific and evidence-based. Reference actual details from the research data.
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.5, maxOutputTokens: 2500 }
+        generationConfig: { temperature: 0.5, maxOutputTokens: 2500, response_mime_type: 'application/json' }
       })
     });
     if (!resp.ok) {
@@ -1114,8 +1114,12 @@ Be specific and evidence-based. Reference actual details from the research data.
     const data = await resp.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!text) throw new Error('Empty response from Gemini. Try again.');
-    let cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-    return JSON.parse(cleaned);
+    // Strip markdown fences if present
+    let cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/,'').trim();
+    // Extract first {...} block in case of extra surrounding text
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON found in response. Try again.');
+    return JSON.parse(match[0]);
   }
 
   function renderReport(r) {
